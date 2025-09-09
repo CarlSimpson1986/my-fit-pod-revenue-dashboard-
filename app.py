@@ -14,6 +14,7 @@ st.caption("Income breakdown for Berkhamsted and Aylesbury (June–August 2025)"
 # 🔽 PASTE YOUR SIX CSVs BETWEEN THE TRIPLE QUOTES
 #   → Include the header row: Date,Item,Quantity Sold,Amount Inc Tax
 #   → No extra quotes inside; plain text only.
+#   → If any block is empty, the app will show a red error and stop.
 # ──────────────────────────────────────────────────────────────────────────
 
 # Berkhamsted — June
