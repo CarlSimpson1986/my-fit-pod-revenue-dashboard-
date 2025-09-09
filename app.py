@@ -1,80 +1,101 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-import re, glob, os
+from io import StringIO
 
 st.set_page_config(page_title="My Fit Pod — Revenue Dashboard", page_icon="💪", layout="wide")
 
 st.markdown("# My Fit Pod — 3-Month Revenue Snapshot")
 st.caption("Income breakdown for Berkhamsted and Aylesbury (June–August 2025)")
 
-@st.cache_data
-def load_data(data_path: str = "data"):
-    """
-    Loads all CSVs in ./data, infers gym & month from filename, parses dates.
-    Expected CSV cols: Date, Item, Quantity Sold, Amount Inc Tax (others ignored).
-    Works with filenames like:
-      - berko.jun.25.csv / Berkhamsted.jul.25.csv / Aylesbury.aug.25.csv (case-insensitive)
-    """
-    month_map = {
-        "jan":"January","feb":"February","mar":"March","apr":"April","may":"May",
-        "jun":"June","jul":"July","aug":"August","sep":"September","oct":"October",
-        "nov":"November","dec":"December"
-    }
-    rows = []
-    for fp in glob.glob(os.path.join(data_path, "*.csv")):
-        fn = os.path.basename(fp).lower()
+# ========= EMBED YOUR CSV CONTENTS BELOW =========
+# Open each CSV on your computer, Select All → Copy → Paste between the triple quotes
 
-        # Infer gym from filename
-        gym = "Berkhamsted" if "berk" in fn else ("Aylesbury" if "ayles" in fn else None)
+# Berkhamsted — June
+berko_jun_csv = """PASTE CSV CONTENT HERE
+Date,Item,Quantity Sold,Amount Inc Tax
+...your actual rows...
+"""
 
-        # Infer month from filename
-        m_short = next((m for m in month_map if re.search(rf"\b{m}\b", fn)), None)
-        month_name = month_map.get(m_short, None)
+# Berkhamsted — July
+berko_jul_csv = """PASTE CSV CONTENT HERE
+Date,Item,Quantity Sold,Amount Inc Tax
+...your actual rows...
+"""
 
-        try:
-            df = pd.read_csv(fp)
-        except Exception as e:
-            # show a soft warning but keep going
-            st.warning(f"Could not load {fp}: {e}")
-            continue
+# Berkhamsted — August
+berko_aug_csv = """PASTE CSV CONTENT HERE
+Date,Item,Quantity Sold,Amount Inc Tax
+...your actual rows...
+"""
 
+# Aylesbury — June
+ayles_jun_csv = """PASTE CSV CONTENT HERE
+Date,Item,Quantity Sold,Amount Inc Tax
+...your actual rows...
+"""
+
+# Aylesbury — July
+ayles_jul_csv = """PASTE CSV CONTENT HERE
+Date,Item,Quantity Sold,Amount Inc Tax
+...your actual rows...
+"""
+
+# Aylesbury — August
+ayles_aug_csv = """PASTE CSV CONTENT HERE
+Date,Item,Quantity Sold,Amount Inc Tax
+...your actual rows...
+"""
+
+# ========= DO NOT EDIT BELOW THIS LINE =========
+
+def _ensure_filled(txt, label):
+    if not txt.strip() or "PASTE CSV CONTENT HERE" in txt:
+        st.stop()
+        raise ValueError(f"{label} is empty. Paste the full CSV in that triple-quoted block.")
+
+def load_embedded():
+    # Validate all six blocks are filled
+    _ensure_filled(berko_jun_csv, "Berkhamsted June")
+    _ensure_filled(berko_jul_csv, "Berkhamsted July")
+    _ensure_filled(berko_aug_csv, "Berkhamsted August")
+    _ensure_filled(ayles_jun_csv, "Aylesbury June")
+    _ensure_filled(ayles_jul_csv, "Aylesbury July")
+    _ensure_filled(ayles_aug_csv, "Aylesbury August")
+
+    def parse_one(txt, gym, month):
+        df = pd.read_csv(StringIO(txt))
+        # Expect exactly these four columns
         needed = ["Date", "Item", "Quantity Sold", "Amount Inc Tax"]
         missing = [c for c in needed if c not in df.columns]
         if missing:
-            st.warning(f"{fp} missing columns: {missing}")
-            continue
-
-        # Parse date like '30/06/2025 19:25' (UK format)
+            raise ValueError(f"Missing {missing} in embedded CSV for {gym} {month}.")
         df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
-        df["gym"] = gym if gym else df.get("gym", None)
-        df["month"] = month_name if month_name else df["Date"].dt.month_name()
+        df["gym"], df["month"] = gym, month
+        return df
 
-        rows.append(df)
-
-    if not rows:
-        return pd.DataFrame(columns=["Date","Item","Quantity Sold","Amount Inc Tax","gym","month"])
-
-    all_df = pd.concat(rows, ignore_index=True)
+    frames = [
+        parse_one(berko_jun_csv, "Berkhamsted", "June"),
+        parse_one(berko_jul_csv, "Berkhamsted", "July"),
+        parse_one(berko_aug_csv, "Berkhamsted", "August"),
+        parse_one(ayles_jun_csv, "Aylesbury", "June"),
+        parse_one(ayles_jul_csv, "Aylesbury", "July"),
+        parse_one(ayles_aug_csv, "Aylesbury", "August"),
+    ]
+    all_df = pd.concat(frames, ignore_index=True)
+    # Clean up
     all_df["Item"] = all_df["Item"].astype(str).str.strip()
-    all_df["gym"] = all_df["gym"].fillna("Unknown")
-    all_df["month"] = all_df["month"].astype(str)
     return all_df
 
-df = load_data("data")
-
-if df.empty:
-    st.error("No data found. Add your CSVs to the `data/` folder.")
-    st.stop()
+df = load_embedded()
 
 # -------- Sidebar filters
 st.sidebar.header("Filters")
 gyms = sorted(df["gym"].dropna().unique().tolist())
 sel_gyms = st.sidebar.multiselect("Gyms", gyms, default=gyms)
 
-months_order = ["June","July","August","September","October","November","December","January","February","March","April","May"]
-months = [m for m in months_order if m in df["month"].unique().tolist()]
-sel_months = st.sidebar.multiselect("Months", months, default=months)
+months_order = ["June","July","August"]
+sel_months = st.sidebar.multiselect("Months", months_order, default=months_order)
 
 items = sorted(df["Item"].dropna().unique().tolist())
 sel_items = st.sidebar.multiselect("Items (raw)", items, default=items)
@@ -112,40 +133,4 @@ st.altair_chart(chart1, use_container_width=True)
 st.subheader("Monthly Revenue Trend by Gym")
 filtered["month"] = pd.Categorical(filtered["month"], categories=months_order, ordered=True)
 monthly = filtered.groupby(["month","gym"], as_index=False)["Amount Inc Tax"].sum().rename(columns={"Amount Inc Tax":"Revenue"})
-chart2 = alt.Chart(monthly).mark_line(point=True).encode(
-    x=alt.X("month:O", title="Month", sort=months_order),
-    y=alt.Y("Revenue:Q", title="Revenue (£)"),
-    color="gym:N",
-    tooltip=["month:N","gym:N", alt.Tooltip("Revenue:Q", format="£,.2f")]
-).properties(height=320)
-st.altair_chart(chart2, use_container_width=True)
-
-# -------- Sessions per month by Item (stacked bar)
-st.subheader("Session Breakdown per Month (Raw Item)")
-sessions = filtered.groupby(["month","Item"], as_index=False)["Quantity Sold"].sum().rename(columns={"Quantity Sold":"Sessions"})
-chart3 = alt.Chart(sessions).mark_bar().encode(
-    x=alt.X("month:O", title="Month", sort=months_order),
-    y=alt.Y("Sessions:Q", title="Sessions"),
-    color=alt.Color("Item:N", title="Item"),
-    tooltip=["month:N","Item:N","Sessions:Q"]
-).properties(height=380)
-st.altair_chart(chart3, use_container_width=True)
-
-# -------- Details tabs
-st.subheader("Details")
-t1, t2 = st.tabs(["Monthly Revenue Table", "Session Breakdown Table"])
-
-with t1:
-    st.dataframe(monthly.sort_values(["month","gym"]))
-
-with t2:
-    pivot = sessions.pivot(index="Item", columns="month", values="Sessions").fillna(0).astype(int)
-    st.dataframe(pivot)
-
-# -------- Download filtered transactions
-st.download_button(
-    "Download filtered transactions (CSV)",
-    data=filtered.to_csv(index=False).encode("utf-8"),
-    file_name="filtered_transactions.csv",
-    mime="text/csv"
-)
+chart2 = alt.Chart(monthly).mark_line(point=True).encode_
